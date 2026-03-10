@@ -1,17 +1,24 @@
 import { NextResponse } from "next/server";
 
 /*
- VITALIS AI - FITNESS & NUTRITION ENGINE
- Backend Chat API for the Vitalis AI Fitness Coach
+  VITALIS AI - FITNESS & NUTRITION ENGINE
+  Backend API Route for Gemini AI
 */
+
+const MODEL = "gemini-2.5-flash";
+const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export async function POST(req: Request) {
   try {
 
-    const body = await req.json();
-    const { message, history } = body;
+    /* -------------------------------
+       1️⃣ Parse Request
+    --------------------------------*/
 
-    // Basic validation
+    const body = await req.json();
+    const message: string = body?.message;
+    const history = body?.history || [];
+
     if (!message || typeof message !== "string") {
       return NextResponse.json(
         { error: "Message must be a valid string." },
@@ -26,24 +33,25 @@ export async function POST(req: Request) {
       );
     }
 
+    /* -------------------------------
+       2️⃣ Validate API Key
+    --------------------------------*/
+
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      console.error("Missing GEMINI_API_KEY");
+      console.error("Missing GEMINI_API_KEY environment variable");
       return NextResponse.json(
-        { error: "AI configuration error." },
+        { error: "AI service configuration error." },
         { status: 500 }
       );
     }
 
-    /*
-      Use stable Gemini model
-    */
-    const GEMINI_URL =
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    /* -------------------------------
+       3️⃣ Prepare Conversation
+    --------------------------------*/
 
-    // Limit conversation memory
-    const recentHistory = (history || []).slice(-10);
+    const recentHistory = history.slice(-10);
 
     const contents = recentHistory.map((msg: any) => ({
       role: msg.role === "user" ? "user" : "model",
@@ -55,6 +63,10 @@ export async function POST(req: Request) {
       parts: [{ text: message }]
     });
 
+    /* -------------------------------
+       4️⃣ Gemini Request Payload
+    --------------------------------*/
+
     const payload = {
       contents,
 
@@ -65,28 +77,28 @@ export async function POST(req: Request) {
             text: `
 You are **Vitalis**, an elite AI Fitness Coach and Sports Nutrition Specialist.
 
-EXPERTISE:
+EXPERTISE
 • Workout programming (strength, hypertrophy, HIIT)
-• Weight loss and fat burning strategies
+• Weight loss strategies
 • Sports nutrition and macros
 • Supplement science
 • Recovery and lifestyle wellness
 
-STYLE:
+STYLE
 • Professional and motivating
 • Use bullet points and headings
 • Use Markdown tables for workout or diet plans
 
-DOMAIN RESTRICTION:
+DOMAIN RESTRICTION
 If the user asks unrelated topics respond:
-"As your personal fitness coach, I specialize exclusively in health, training, and nutrition. Let's focus on your physical goals."
+"As your personal fitness coach, I specialize exclusively in health, training, and nutrition."
 
-SAFETY RULES:
+SAFETY RULES
 • Never give medical diagnosis
-• Recommend consulting professionals for injuries or medical issues
+• Recommend consulting professionals for injuries
 
-MANDATORY DISCLAIMER:
-Append this text at the end of every answer:
+MANDATORY DISCLAIMER
+Append this text at the end of every response:
 
 ---
 *Disclaimer: This guidance is for educational purposes and should not replace advice from certified medical or fitness professionals.*
@@ -114,24 +126,30 @@ Append this text at the end of every answer:
       ]
     };
 
-    // Timeout protection
+    /* -------------------------------
+       5️⃣ Call Gemini API
+    --------------------------------*/
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const response = await fetch(GEMINI_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
+    const response = await fetch(
+      `${GEMINI_ENDPOINT}/${MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      }
+    );
 
     clearTimeout(timeout);
 
     if (!response.ok) {
-      const err = await response.text();
-      console.error("Gemini API error:", err);
+      const errorText = await response.text();
+      console.error("Gemini API error:", errorText);
 
       return NextResponse.json(
         { error: "AI service failed to respond." },
@@ -139,13 +157,15 @@ Append this text at the end of every answer:
       );
     }
 
+    /* -------------------------------
+       6️⃣ Parse AI Response
+    --------------------------------*/
+
     const data = await response.json();
 
-    const candidate = data?.candidates?.[0];
-
     const reply =
-      candidate?.content?.parts?.[0]?.text ||
-      "I couldn't generate a fitness response at the moment.";
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "I couldn't generate a response right now.";
 
     return NextResponse.json({
       reply,
@@ -154,7 +174,7 @@ Append this text at the end of every answer:
 
   } catch (error: any) {
 
-    console.error("Vitalis API error:", error);
+    console.error("Vitalis API route error:", error);
 
     if (error.name === "AbortError") {
       return NextResponse.json(
