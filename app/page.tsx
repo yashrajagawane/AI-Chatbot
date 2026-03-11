@@ -277,7 +277,7 @@ export default function App() {
         {
           id:"1",
           role:"assistant",
-          content:"Welcome to **AI Fitness Coach** 💪 I'm your personal fitness and nutrition guide. How can I help you today?",
+          content:"Welcome to **AI Fitness Coach** 💪I'm your personal fitness and nutrition guide.\n**How can I help you today?**",
           timestamp:new Date()
         }
       ]
@@ -312,7 +312,7 @@ export default function App() {
   const streamText = async(text:string, targetSessionId: string)=>{
 
     let current="";
-    // Increased chunk size to prevent freezing and speed up rendering
+    // Send larger chunks for a faster perceived typing speed
     const chunkSize = 8; 
 
     for(let i=0;i<text.length;i+=chunkSize){
@@ -335,6 +335,7 @@ export default function App() {
         })
       );
 
+      // Fast typing speed
       await new Promise(r=>setTimeout(r,5));
     }
   };
@@ -375,15 +376,11 @@ export default function App() {
     const targetSessionId = currentSessionId;
 
     try{
-
-      // HIDDEN PROMPT: Forces AI to return highly structured, non-theoretical text without tables.
-      const secretPrompt = `\n\n[SYSTEM DIRECTIVE: Respond with a highly structured, professional, and concise format. Use emojis, short paragraphs, and bullet points. Absolutely NO markdown tables—use formatted lists instead. Be direct, authoritative, and avoid theoretical fluff.]`;
-
       const res=await fetch("/api/chat",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          message: message + secretPrompt, // AI sees the command, UI only shows your text
+          message: message, 
           history:messages.slice(-10).map(m=>({
             role:m.role,
             content:m.content
@@ -419,6 +416,33 @@ export default function App() {
     }
 
     setLoading(false);
+  };
+
+  /* ---------- HELPER: Markdown Formatting ---------- */
+  
+  // Custom pre-processor to turn raw markdown tables into code blocks 
+  // without needing the remark-gfm plugin
+  const formatContent = (content: string) => {
+    let inTable = false;
+    const lines = content.split('\n');
+    const formatted = lines.map(line => {
+      const trimmed = line.trim();
+      if (trimmed.includes('|') && trimmed.length > 2 && !trimmed.startsWith('`')) {
+        if (!inTable) {
+          inTable = true;
+          return '```\n' + line;
+        }
+        return line;
+      } else {
+        if (inTable) {
+          inTable = false;
+          return '```\n' + line;
+        }
+        return line;
+      }
+    });
+    if (inTable) formatted.push('```');
+    return formatted.join('\n');
   };
 
   /* ---------------- UI ---------------- */
@@ -512,7 +536,7 @@ export default function App() {
                           )
                       }}
                     >
-                      {m.content}
+                      {formatContent(m.content)}
                     </ReactMarkdown>
                   </div>
 
